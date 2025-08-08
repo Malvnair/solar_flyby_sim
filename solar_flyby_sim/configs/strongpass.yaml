@@ -1,0 +1,30 @@
+run:
+  label: strongpass
+  duration_yr: 2.0e7
+  dt_yr: 0.004109589
+  output_every_steps: 100
+  densify_near_flyby: true
+  seed_master: 20250808
+
+physics:
+  gr: true
+  solar_j2: true
+  j2_value: 2.2e-7
+  solar_mass_loss: false
+
+bodies:
+  use_default_list: true
+
+flybys:
+  enabled: true
+  density_scale: 1.0
+  impact_b_pc_max: 0.1
+  injection_radius_pc: 1.0
+  force_strong_pass: true
+  strong_threshold: 5e-9   # example impulse-gradient cutoff; tune later
+
+io:
+  outdir: outputs/strongpass
+
+logging:
+  level: INFO

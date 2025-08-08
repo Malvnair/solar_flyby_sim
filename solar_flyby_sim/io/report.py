@@ -1,0 +1,1 @@
+"""Step 10: build HTML report per run with plots and metrics."""

@@ -1,0 +1,26 @@
+run:
+  label: smoke
+  duration_yr: 5.0               # Only 5 years
+  dt_yr: 0.004109589              # ~1.5 days per step
+  output_every_steps: 10
+  densify_near_flyby: false
+  seed_master: 20250808
+  smoke_stub: true                # Use Sun + Earth stub
+
+physics:
+  gr: false
+  solar_j2: false
+  j2_value: 2.2e-7
+  solar_mass_loss: false
+
+bodies:
+  use_default_list: true
+
+flybys:
+  enabled: false
+
+io:
+  outdir: outputs/smoke
+
+logging:
+  level: INFO
