@@ -1,0 +1,11 @@
+[project]
+name = "solar_flyby_sim"
+version = "0.1.0"
+description = "Solar System + stellar flybys with GR using REBOUND"
+authors = [{ name = "Malavika Nair" }]
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-q"
+pythonpath = ["."]
