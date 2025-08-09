@@ -1,0 +1,36 @@
+# solar_flyby_sim/intruders/quick.py
+import numpy as np
+
+AU_PER_KM = 1.0 / 1.495978707e8
+YR_PER_S  = 1.0 / (365.25*24*3600.0)
+
+def add_linear_intruder(sim, mass_Msun=0.5, v_inf_kms=20.0,
+                        impact_param_AU=1.0e4, r_init_AU=2.0e4,
+                        direction_spherical_deg=(60.0, 40.0)):
+    """
+    Fast setup: place a star at distance r_init, moving toward the Sun with
+    asymptotic speed v_inf. Offset the path by 'impact_param_AU' so the
+    straight-line miss distance would be b; Sun's gravity will bend it.
+    """
+    # Unit vector for approach direction (points from star toward the Sun)
+    theta_deg, phi_deg = direction_spherical_deg
+    th = np.radians(theta_deg)  # polar (from +z)
+    ph = np.radians(phi_deg)    # azimuth (from +x)
+    n = np.array([np.sin(th)*np.cos(ph), np.sin(th)*np.sin(ph), np.cos(th)])
+
+    # Pick a transverse unit vector perpendicular to n
+    # (use z-hat unless nearly parallel)
+    zhat = np.array([0.0, 0.0, 1.0])
+    if abs(np.dot(n, zhat)) > 0.95:
+        zhat = np.array([1.0, 0.0, 0.0])
+    t = np.cross(n, zhat)
+    t /= np.linalg.norm(t)
+
+    # Position and velocity in AU and AU/yr (your sim units)
+    r0 = -n * r_init_AU + t * impact_param_AU  # inbound, offset by b
+    v_inf_AUyr = v_inf_kms * AU_PER_KM / YR_PER_S
+    v0 = n * v_inf_AUyr  # toward Sun
+
+    sim.add(m=mass_Msun, x=r0[0], y=r0[1], z=r0[2],
+            vx=v0[0], vy=v0[1], vz=v0[2])
+    return sim

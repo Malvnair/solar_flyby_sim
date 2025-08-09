@@ -22,6 +22,7 @@ def make_sim(dt_yr: float, gr: bool = True, j2_on: bool = True, j2_value: float 
             if gr:
                 try:
                     grmod = rx.load_force("gr")
+                    rx.add_force(grmod)
                     grmod.params["c"] = 63239.7263
                     rx.add_force(grmod)
                 except Exception as e:

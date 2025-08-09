@@ -1,0 +1,28 @@
+run:
+  label: intruder_demo
+  duration_yr: 2000
+  dt_yr: 0.01369863
+  output_every_steps: 200
+  integrator: ias15
+
+physics:
+  gr: true
+  solar_j2: false
+
+bodies:
+  use_default_list: true
+  elements_csv: solar_flyby_sim/data/j2000_elements.csv
+
+intruder:
+  enabled: true
+  mass_Msun: 0.5
+  v_inf_kms: 20.0
+  impact_param_AU: 10000
+  r_init_AU: 20000
+  direction_spherical_deg: [60, 40]
+
+io:
+  outdir: outputs/intruder_demo
+
+logging:
+  level: INFO

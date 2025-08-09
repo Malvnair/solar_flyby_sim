@@ -1,7 +1,11 @@
+# solar_flyby_sim/solar_flyby_sim/sim/driver.py
 from __future__ import annotations
+
 import logging
 from pathlib import Path
 import numpy as np
+import rebound  # needed for SimulationArchive
+
 from .integrator import make_sim, add_bodies
 from ..physics.initial_conditions import get_initial_states
 from ..physics.stellar_passages import draw_flybys
@@ -13,45 +17,109 @@ from ..utils import set_all_seeds
 log = logging.getLogger("solar_flyby_sim.driver")
 
 
-def run_simulation(cfg: dict):
-    run = cfg["run"]; phys = cfg["physics"]; fb = cfg["flybys"]; io = cfg["io"]
-    set_all_seeds(int(run.get("seed_master", 20250808)))
+def run_simulation(cfg: dict) -> None:
+    """
+    Main entry point to build a REBOUND simulation, integrate it, and write outputs.
 
-    # Build sim
-    sim = make_sim(dt_yr=run["dt_yr"], gr=phys.get("gr", True),
-                   j2_on=phys.get("solar_j2", True), j2_value=phys.get("j2_value", 2.2e-7))
-    sim.contents["j2_value"] = phys.get("j2_value", 2.2e-7)
+    Config structure (minimal):
+      run:
+        label: str
+        duration_yr: float
+        dt_yr: float
+        output_every_steps: int
+        seed_master: int (optional)
+      physics:
+        gr: bool
+        solar_j2: bool
+        j2_value: float (optional)
+      bodies: {...}            # passed to get_initial_states(...)
+      flybys: {...}            # config for draw_flybys(...)
+      intruder:                # optional quick, linear intruder
+        enabled: bool
+        mass_Msun: float
+        v_inf_kms: float
+        impact_param_AU: float
+        r_init_AU: float
+        direction_spherical_deg: [theta_deg, phi_deg]
+      io:
+        outdir: str
+    """
+    run = cfg["run"]
+    phys = cfg["physics"]
+    fb_cfg = cfg.get("flybys", {})
+    io_cfg = cfg["io"]
 
-    # Initial conditions
-    rng = np.random.default_rng(run.get("seed_master", 20250808))
+    # Seeds
+    seed_master = int(run.get("seed_master", 20250808))
+    set_all_seeds(seed_master)
+    rng = np.random.default_rng(seed_master)
+
+    # Build simulation
+    sim = make_sim(
+        dt_yr=float(run["dt_yr"]),
+        gr=bool(phys.get("gr", True)),
+        j2_on=bool(phys.get("solar_j2", True)),
+        j2_value=float(phys.get("j2_value", 2.2e-7)),
+    )
+    sim.contents["j2_value"] = float(phys.get("j2_value", 2.2e-7))
+
+    # Initial bodies
     states = get_initial_states(cfg.get("bodies", {}), rng)
     add_bodies(sim, states)
 
+    # Optional: add a simple linear stellar intruder
+    intr = cfg.get("intruder", {})
+    if intr.get("enabled", False):
+        from solar_flyby_sim.intruders.quick import add_linear_intruder
+
+        add_linear_intruder(
+            sim,
+            mass_Msun=float(intr.get("mass_Msun", 0.5)),
+            v_inf_kms=float(intr.get("v_inf_kms", 20.0)),
+            impact_param_AU=float(intr.get("impact_param_AU", 1.0e4)),
+            r_init_AU=float(intr.get("r_init_AU", 2.0e4)),
+            direction_spherical_deg=tuple(intr.get("direction_spherical_deg", [60.0, 40.0])),
+        )
+
     # Outputs
-    outdir = Path(io.get("outdir", "outputs/run"))
+    outdir = Path(io_cfg.get("outdir", "outputs/run"))
     outdir.mkdir(parents=True, exist_ok=True)
     writer = OutputWriter(outdir)
 
+    # Optional REBOUND SimulationArchive for animation/post-processing
+    sa_path = outdir / "states.bin"
+    sa = rebound.Simulationarchive(str(sa_path), create=True)
+
+    # Time stepping
     duration = float(run["duration_yr"])
     dt = float(run["dt_yr"])
-    steps = int(duration / dt)
+    steps = int(np.floor(duration / dt))
     every = int(run.get("output_every_steps", 100))
 
+    # Diagnostics
     diag = Diagnostics(sim)
 
-    # Flybys (to be implemented in Step 4)
-    flyby_list = draw_flybys(cfg["flybys"], duration, rng)
-    next_flyby_idx = 0
+    # (Placeholder) stochastic flybys list if you use that pipeline
+    flyby_list = draw_flybys(fb_cfg, duration, rng)
+    next_flyby_idx = 0  # reserved if you later trigger them during the loop
 
     log.info("Starting integration: duration=%.3e yr, steps=%d", duration, steps)
     t0 = sim.t
+
     for i in range(steps + 1):
-        sim.integrate(t0 + i*dt)
+        # If you later want to trigger scheduled flybys, check here using sim.t
+        # while next_flyby_idx < len(flyby_list) and flyby_list[next_flyby_idx].t <= sim.t:
+        #     flyby_list[next_flyby_idx].apply(sim)
+        #     next_flyby_idx += 1
+
+        sim.integrate(t0 + i * dt)
 
         if i % every == 0:
             elems = compute_elements(sim)
-            energy, angmom = diag.energy(), diag.angular_momentum()
+            energy = diag.energy()
+            angmom = diag.angular_momentum()
             writer.write_snapshot(sim.t, elems, energy, angmom)
+            sa.append(sim)
 
     writer.finalize()
     log.info("Run complete. Output in %s", outdir)
