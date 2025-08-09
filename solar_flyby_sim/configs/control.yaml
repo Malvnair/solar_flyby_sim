@@ -1,26 +1,20 @@
 run:
   label: control
-  duration_yr: 2.0e7   # 20 Myr
-  dt_yr: 0.004109589    # 1.5 days
-  output_every_steps: 100
-  densify_near_flyby: true
-  seed_master: 20250808
+  duration_yr: 1.0e3        # 1,000 years
+  dt_yr: 0.01369863         # 5 days (~73k steps total)
+  output_every_steps: 200
+  integrator: ias15
 
 physics:
-  gr: true
-  solar_j2: true
-  j2_value: 2.2e-7
-  solar_mass_loss: false
+  gr: true                 # turn REBOUNDx off for now
+  solar_j2: true           # your build lacks 'oblateness'; keep off
 
 bodies:
   use_default_list: true
-  # If false, provide your own list below
+  elements_csv: solar_flyby_sim/data/j2000_elements.csv
 
 flybys:
-  enabled: false  # control: off or masses /1000 handled in driver
-  density_scale: 1.0
-  impact_b_pc_max: 0.1
-  injection_radius_pc: 1.0
+  enabled: false
 
 io:
   outdir: outputs/control

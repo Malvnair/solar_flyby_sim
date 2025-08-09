@@ -1,1 +1,0 @@
-"""Step 10: generate PNGs: a(t), e(t), i(t), energy drift, Mercury varpi(t), Δe vs impulse."""

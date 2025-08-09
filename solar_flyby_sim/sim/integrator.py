@@ -9,7 +9,7 @@ log = logging.getLogger("solar_flyby_sim.integrator")
 def make_sim(dt_yr: float, gr: bool = True, j2_on: bool = True, j2_value: float = 2.2e-7):
     sim = rebound.Simulation()
     sim.units = ("AU", "yr", "Msun")
-    sim.integrator = "whfast"
+    sim.integrator = "ias15"
     sim.dt = dt_yr
 
     # Only bring in REBOUNDx if we actually need it
@@ -22,16 +22,17 @@ def make_sim(dt_yr: float, gr: bool = True, j2_on: bool = True, j2_value: float 
             if gr:
                 try:
                     grmod = rx.load_force("gr")
+                    grmod.params["c"] = 63239.7263
                     rx.add_force(grmod)
                 except Exception as e:
                     log.warning("GR force not available in this REBOUNDx build; continuing without GR. (%s)", e)
             if j2_on:
                 try:
-                    obl = rx.load_force("oblateness")
+                    obl = rx.load_force("gravitational_harmonics")
                     rx.add_force(obl)
                     sim.contents["obl"] = obl
                 except Exception as e:
-                    log.warning("Oblateness force not available; continuing without J2. (%s)", e)
+                    log.warning("Gravitational Harmonics not available; continuing without J2. (%s)", e)
         except Exception as e:
             log.warning("REBOUNDx not available; continuing without GR/J2. (%s)", e)
 
