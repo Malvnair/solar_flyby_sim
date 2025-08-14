@@ -1,4 +1,3 @@
-# solar_flyby_sim/plots/energy_conservation.py
 from __future__ import annotations
 import argparse
 from pathlib import Path
@@ -22,8 +21,7 @@ def _extract_energy(df: pd.DataFrame):
 def _extract_L(df: pd.DataFrame):
     t = df["time"].to_numpy() if "time" in df.columns else df["t"].to_numpy()
     for c in ("Lx","Ly","Lz"):
-        if c not in df.columns:
-            raise ValueError("AngMom needs Lx,Ly,Lz")
+        if c not in df.columns: raise ValueError("AngMom needs Lx,Ly,Lz")
     L = np.sqrt(df["Lx"]**2 + df["Ly"]**2 + df["Lz"]**2).to_numpy()
     return t, L
 
@@ -32,7 +30,6 @@ def main():
     ap.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)
     ap.add_argument("--show", action="store_true")
     args = ap.parse_args()
-
     outdir: Path = args.outdir
     outdir.mkdir(parents=True, exist_ok=True)
 

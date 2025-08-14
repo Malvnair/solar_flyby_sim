@@ -1,68 +1,59 @@
-# solar_flyby_sim/plots/quicklook_plot.py
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 
 OUTDIR = Path("outputs/smoke")
-ELFILE_PQT = OUTDIR / "elements.parquet"
-ELFILE_CSV = OUTDIR / "elements.csv"
+EL_PQT = OUTDIR / "elements.parquet"
+EL_CSV = OUTDIR / "elements.csv"
 
 def load_elements():
-    if ELFILE_PQT.exists():
-        df = pd.read_parquet(ELFILE_PQT)
-    elif ELFILE_CSV.exists():
-        df = pd.read_csv(ELFILE_CSV)
-    else:
-        raise FileNotFoundError(f"No elements.[parquet/csv] in {OUTDIR}")
+    if EL_PQT.exists(): df = pd.read_parquet(EL_PQT)
+    elif EL_CSV.exists(): df = pd.read_csv(EL_CSV)
+    else: raise FileNotFoundError(f"No elements.[parquet/csv] in {OUTDIR}")
 
-    # figure out a name column if present
-    name_col = None
-    for cand in ("name", "label", "body", "id"):
-        if cand in df.columns:
-            name_col = cand
-            break
-
-    # drop the Sun if we can identify it
-    if name_col is not None:
-        df = df[df[name_col].astype(str).str.lower() != "sun"]
-
-    # standardize time column
-    if "t" in df.columns and "time" not in df.columns:
+    # unify time column
+    if "time" not in df.columns and "t" in df.columns:
         df = df.rename(columns={"t": "time"})
 
-    # keep only the columns we need if present
-    keep = [c for c in ("time","a","e","i","omega","Omega") if c in df.columns]
-    if name_col: keep = [name_col] + keep
-    return df[keep].copy(), name_col
+    # find a name/id column or create one
+    name_col = next((c for c in ("name","label","body","id","idx","particle") if c in df.columns), None)
+    if name_col is None:
+        # make a stable synthetic id based on row order within each time
+        df = df.sort_values(["time"]).copy()
+        df["body_idx"] = df.groupby("time").cumcount()
+        name_col = "body_idx"
+
+    return df, name_col
+
+def plot_elem(df, name_col, col, ylabel, fname, a_cap=None):
+    plt.figure(figsize=(9,4))
+    for key, grp in df.groupby(name_col):
+        plt.plot(grp["time"], grp[col], lw=1, alpha=0.9, label=str(key))
+    plt.xlabel("Time [yr]"); plt.ylabel(ylabel); plt.title(f"{col}")
+    plt.grid(True)
+    if df[name_col].nunique() <= 12: plt.legend(ncol=2, fontsize=8)
+    if a_cap is not None and col == "a":
+        plt.ylim(0, a_cap)
+    plt.tight_layout()
+    plt.savefig(OUTDIR / fname, dpi=200, bbox_inches="tight")
 
 def main():
     df, name_col = load_elements()
-    if "time" not in df.columns or not any(c in df.columns for c in ("a","e","i")):
-        raise ValueError("elements table missing expected columns (need time and a/e/i).")
+    keep = ["time"] + [c for c in ("a","e","i") if c in df.columns]
+    df = df[[name_col, *keep]].copy()
 
-    plt.figure(figsize=(8,4))
-    if "a" in df.columns:
-        for key, grp in (df.groupby(name_col) if name_col else [("all", df)]):
-            plt.plot(grp["time"], grp["a"], label=str(key))
-        plt.title("Semi-major axis a [AU]")
-        plt.xlabel("Time [yr]"); plt.ylabel("a [AU]"); plt.grid(True)
-        if name_col: plt.legend(ncol=2, fontsize=8)
-        plt.tight_layout()
-        plt.savefig(OUTDIR / "quick_a.png", dpi=200, bbox_inches="tight")
+    # If there is a super-distant body, keep a separate view for inner system
+    a_cap = None
+    if "a" in df.columns and df["a"].max() > 50:
+        a_cap = 50  # AU
 
-    plt.figure(figsize=(8,4))
-    if "e" in df.columns:
-        for key, grp in (df.groupby(name_col) if name_col else [("all", df)]):
-            plt.plot(grp["time"], grp["e"], label=str(key))
-        plt.title("Eccentricity e")
-        plt.xlabel("Time [yr]"); plt.ylabel("e"); plt.grid(True)
-        if name_col: plt.legend(ncol=2, fontsize=8)
-        plt.tight_layout()
-        plt.savefig(OUTDIR / "quick_e.png", dpi=200, bbox_inches="tight")
+    if "a" in df.columns: plot_elem(df, name_col, "a", "a [AU]", "quick_a.png", a_cap=a_cap)
+    if "e" in df.columns: plot_elem(df, name_col, "e", "e", "quick_e.png")
+    if "i" in df.columns: plot_elem(df, name_col, "i", "i [rad or deg]", "quick_i.png")
 
     plt.show()
 
 if __name__ == "__main__":
     print(f"RUNNING: {__file__}")
     main()
-    print(f"Saved: {OUTDIR}/quick_[a|e].png")
+    print(f"Saved quick plots in {OUTDIR}")
