@@ -104,9 +104,18 @@ def run_simulation(cfg: dict) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     writer = OutputWriter(outdir)
 
-    # Optional REBOUND SimulationArchive for animation/post-processing
+    # Optional REBOUND SimulationArchive for animation/post-processing (version-safe)
     sa_path = outdir / "states.bin"
-    sa = rebound.Simulationarchive(str(sa_path), create=True)
+    def snapshot(sim):
+      try:
+        # Append a snapshot to the archive file (will create if missing)
+        sim.simulationarchive_snapshot(str(sa_path))
+      except Exception as e:
+        log.warning("Skipping SimulationArchive snapshot: %s", e)
+
+# Take an initial snapshot before the loop
+    snapshot(sim)
+
 
     # Time stepping (integrate to a regular grid for outputs)
     duration = float(run["duration_yr"])
@@ -137,7 +146,7 @@ def run_simulation(cfg: dict) -> None:
             energy = diag.energy()
             angmom = diag.angular_momentum()
             writer.write_snapshot(sim.t, elems, energy, angmom)
-            sa.append(sim)
+            snapshot(sim)
 
     writer.finalize()
     log.info("Run complete. Output in %s", outdir)
