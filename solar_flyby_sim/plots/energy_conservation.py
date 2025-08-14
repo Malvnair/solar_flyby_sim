@@ -25,5 +25,5 @@ plt.ylabel("Total Energy")
 plt.title("Energy Conservation")
 plt.grid()
 
-plt.savefig("Energy Conservation")
+plt.savefig("Energy_Conservation.png", dpi=200, bbox_inches="tight")
 plt.show()
