@@ -3,7 +3,7 @@
 Research-grade Solar System integrations with stellar flybys, GR perihelion precession, and publishable diagnostics. Python/REBOUND implementation inspired by Kaib & Raymond (Icarus 2025) setup and classical apsidal-precession analyses.
 
 ## Features
-- Symplectic core (**WHFast**) with automatic switching to **IAS15** near close encounters
+- Adaptive **IAS15** integrator with outputs sampled on a regular time grid
 - 1PN GR via REBOUNDx; optional solar J2 and mass-loss toggles
 - Realistic stellar flyby generator; injection at 1 pc; b≤0.1 pc; impulse-gradient logging
 - J2000 (JD 2451545.0 TDB) initial conditions from JPL Horizons

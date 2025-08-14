@@ -4,15 +4,17 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 import numpy as np
+import pandas as pd
 import rebound  # needed for SimulationArchive
 
-from .integrator import make_sim, add_bodies
+from .integrator import make_sim
 from ..physics.initial_conditions import get_initial_states
 from ..physics.stellar_passages import draw_flybys
 from ..analysis.elements import compute_elements
 from ..analysis.diagnostics import Diagnostics
 from ..io.storage import OutputWriter
 from ..utils import set_all_seeds
+from ..physics.constants import R_SUN_AU, J2_SUN_DEFAULT
 
 log = logging.getLogger("solar_flyby_sim.driver")
 
@@ -25,7 +27,7 @@ def run_simulation(cfg: dict) -> None:
       run:
         label: str
         duration_yr: float
-        dt_yr: float
+        dt_yr: float                 # output sampling interval (IAS15 is adaptive)
         output_every_steps: int
         seed_master: int (optional)
       physics:
@@ -59,13 +61,29 @@ def run_simulation(cfg: dict) -> None:
         dt_yr=float(run["dt_yr"]),
         gr=bool(phys.get("gr", True)),
         j2_on=bool(phys.get("solar_j2", True)),
-        j2_value=float(phys.get("j2_value", 2.2e-7)),
+        j2_value=float(phys.get("j2_value", J2_SUN_DEFAULT)),
     )
-    sim.contents["j2_value"] = float(phys.get("j2_value", 2.2e-7))
+    sim.contents["j2_value"] = float(phys.get("j2_value", J2_SUN_DEFAULT))
 
     # Initial bodies
     states = get_initial_states(cfg.get("bodies", {}), rng)
-    add_bodies(sim, states)
+    for bs in states:
+        sim.add(m=bs.m, x=bs.r[0], y=bs.r[1], z=bs.r[2],
+                vx=bs.v[0], vy=bs.v[1], vz=bs.v[2])
+    sim.move_to_com()
+
+    # If oblateness active and available, set parameters on central body
+    rx = sim.contents.get("reboundx")
+    obl = sim.contents.get("obl")
+    if rx is not None and obl is not None:
+        try:
+            j2 = sim.contents.get("j2_value", J2_SUN_DEFAULT)
+            rebx_particle = rx.get_particle(sim.particles[0])
+            rebx_particle.params["J2"] = j2
+            rebx_particle.params["R_eq"] = R_SUN_AU
+            log.info("J2 enabled: J2=%.3e, R_eq=%.6f AU", j2, R_SUN_AU)
+        except Exception as e:
+            log.warning("Failed to set J2 params; continuing without J2. (%s)", e)
 
     # Optional: add a simple linear stellar intruder
     intr = cfg.get("intruder", {})
@@ -90,7 +108,7 @@ def run_simulation(cfg: dict) -> None:
     sa_path = outdir / "states.bin"
     sa = rebound.Simulationarchive(str(sa_path), create=True)
 
-    # Time stepping
+    # Time stepping (integrate to a regular grid for outputs)
     duration = float(run["duration_yr"])
     dt = float(run["dt_yr"])
     steps = int(np.floor(duration / dt))
@@ -115,7 +133,7 @@ def run_simulation(cfg: dict) -> None:
         sim.integrate(t0 + i * dt)
 
         if i % every == 0:
-            elems = compute_elements(sim)
+            elems = pd.DataFrame(compute_elements(sim))
             energy = diag.energy()
             angmom = diag.angular_momentum()
             writer.write_snapshot(sim.t, elems, energy, angmom)
