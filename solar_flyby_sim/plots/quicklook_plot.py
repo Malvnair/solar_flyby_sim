@@ -1,39 +1,68 @@
-import os
+# solar_flyby_sim/plots/quicklook_plot.py
 import pandas as pd
 import matplotlib.pyplot as plt
+from pathlib import Path
 
-print("RUNNING:", os.path.abspath(__file__))
+OUTDIR = Path("outputs/smoke")
+ELFILE_PQT = OUTDIR / "elements.parquet"
+ELFILE_CSV = OUTDIR / "elements.csv"
 
-# Load elements
-df = pd.read_parquet("outputs/smoke/elements.parquet").query('name != "Sun"')
-bodies = df["name"].unique()
+def load_elements():
+    if ELFILE_PQT.exists():
+        df = pd.read_parquet(ELFILE_PQT)
+    elif ELFILE_CSV.exists():
+        df = pd.read_csv(ELFILE_CSV)
+    else:
+        raise FileNotFoundError(f"No elements.[parquet/csv] in {OUTDIR}")
 
-fig, axes = plt.subplots(2, 1, figsize=(9, 6), sharex=True)
+    # figure out a name column if present
+    name_col = None
+    for cand in ("name", "label", "body", "id"):
+        if cand in df.columns:
+            name_col = cand
+            break
 
-for body in bodies:
-    sub = df[df["name"] == body]
-    axes[0].plot(sub["t"], sub["a"], label=body, linewidth=1.5)
-    axes[1].plot(sub["t"], sub["e"], label=body, linewidth=1.5)
+    # drop the Sun if we can identify it
+    if name_col is not None:
+        df = df[df[name_col].astype(str).str.lower() != "sun"]
 
-# Labels
-axes[0].set_ylabel("Semi-major axis, a [AU]", fontsize=12)
-axes[1].set_ylabel("Eccentricity, e", fontsize=12)
-axes[1].set_xlabel("Time [yr]", fontsize=12)
+    # standardize time column
+    if "t" in df.columns and "time" not in df.columns:
+        df = df.rename(columns={"t": "time"})
 
-# Styling
-for ax in axes:
-    ax.grid(True, linestyle="--", alpha=0.6)
-    ax.tick_params(axis="both", which="major", labelsize=10)
-    ax.ticklabel_format(style="sci", axis="y", scilimits=(0, 0))
+    # keep only the columns we need if present
+    keep = [c for c in ("time","a","e","i","omega","Omega") if c in df.columns]
+    if name_col: keep = [name_col] + keep
+    return df[keep].copy(), name_col
 
-axes[0].legend(fontsize=10, loc="best", frameon=True)
+def main():
+    df, name_col = load_elements()
+    if "time" not in df.columns or not any(c in df.columns for c in ("a","e","i")):
+        raise ValueError("elements table missing expected columns (need time and a/e/i).")
 
-# Title
-fig.suptitle("Smoke Test — Orbital Elements", fontsize=14, fontweight="bold", y=0.98)
+    plt.figure(figsize=(8,4))
+    if "a" in df.columns:
+        for key, grp in (df.groupby(name_col) if name_col else [("all", df)]):
+            plt.plot(grp["time"], grp["a"], label=str(key))
+        plt.title("Semi-major axis a [AU]")
+        plt.xlabel("Time [yr]"); plt.ylabel("a [AU]"); plt.grid(True)
+        if name_col: plt.legend(ncol=2, fontsize=8)
+        plt.tight_layout()
+        plt.savefig(OUTDIR / "quick_a.png", dpi=200, bbox_inches="tight")
 
-# Save + show
-plt.tight_layout(rect=[0, 0, 1, 0.96])
-outpath = "outputs/smoke/smoke_test_orbital_elements.png"
-plt.savefig(outpath, dpi=300)
-print("Saved:", os.path.abspath(outpath))
-plt.show()
+    plt.figure(figsize=(8,4))
+    if "e" in df.columns:
+        for key, grp in (df.groupby(name_col) if name_col else [("all", df)]):
+            plt.plot(grp["time"], grp["e"], label=str(key))
+        plt.title("Eccentricity e")
+        plt.xlabel("Time [yr]"); plt.ylabel("e"); plt.grid(True)
+        if name_col: plt.legend(ncol=2, fontsize=8)
+        plt.tight_layout()
+        plt.savefig(OUTDIR / "quick_e.png", dpi=200, bbox_inches="tight")
+
+    plt.show()
+
+if __name__ == "__main__":
+    print(f"RUNNING: {__file__}")
+    main()
+    print(f"Saved: {OUTDIR}/quick_[a|e].png")

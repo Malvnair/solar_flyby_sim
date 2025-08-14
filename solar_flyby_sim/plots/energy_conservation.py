@@ -6,6 +6,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+DEFAULT_OUTDIR = Path("outputs/smoke")
+
 def _load_table(outdir: Path, stem: str) -> pd.DataFrame:
     pqt, csv = outdir / f"{stem}.parquet", outdir / f"{stem}.csv"
     if pqt.exists(): return pd.read_parquet(pqt)
@@ -27,10 +29,11 @@ def _extract_L(df: pd.DataFrame):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--outdir", type=Path, required=True)
+    ap.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)
     ap.add_argument("--show", action="store_true")
     args = ap.parse_args()
-    outdir: Path 
+
+    outdir: Path = args.outdir
     outdir.mkdir(parents=True, exist_ok=True)
 
     energy_df = _load_table(outdir, "energy")

@@ -1,0 +1,144 @@
+x
+X# solar_flyby_sim/solar_flyby_sim/sim/driver.py
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import rebound  # needed for SimulationArchive
+
+from .integrator import make_sim
+from ..physics.initial_conditions import get_initial_states
+from ..physics.stellar_passages import draw_flybys
+from ..analysis.elements import compute_elements
+from ..analysis.diagnostics import Diagnostics
+from ..io.storage import OutputWriter
+from ..utils import set_all_seeds
+from ..physics.constants import R_SUN_AU, J2_SUN_DEFAULT
+
+log = logging.getLogger("solar_flyby_sim.driver")
+
+
+def run_simulation(cfg: dict) -> None:
+    """
+    Main entry point to build a REBOUND simulation, integrate it, and write outputs.
+
+    Config structure (minimal):
+      run:
+        label: str
+        duration_yr: float
+        dt_yr: float                 # output sampling interval (IAS15 is adaptive)
+        output_every_steps: int
+        seed_master: int (optional)
+      physics:
+        gr: bool
+        solar_j2: bool
+        j2_value: float (optional)
+      bodies: {...}            # passed to get_initial_states(...)
+      flybys: {...}            # config for draw_flybys(...)
+      intruder:                # optional quick, linear intruder
+        enabled: bool
+        mass_Msun: float
+        v_inf_kms: float
+        impact_param_AU: float
+        r_init_AU: float
+        direction_spherical_deg: [theta_deg, phi_deg]
+      io:
+        outdir: str
+    """
+    run = cfg["run"]
+    phys = cfg["physics"]
+    fb_cfg = cfg.get("flybys", {})
+    io_cfg = cfg["io"]
+
+    # Seeds
+    seed_master = int(run.get("seed_master", 20250808))
+    set_all_seeds(seed_master)
+    rng = np.random.default_rng(seed_master)
+
+    # Build simulation
+    sim = make_sim(
+        dt_yr=float(run["dt_yr"]),
+        gr=bool(phys.get("gr", True)),
+        j2_on=bool(phys.get("solar_j2", True)),
+        j2_value=float(phys.get("j2_value", J2_SUN_DEFAULT)),
+    )
+    sim.contents["j2_value"] = float(phys.get("j2_value", J2_SUN_DEFAULT))
+
+    # Initial bodies
+    states = get_initial_states(cfg.get("bodies", {}), rng)
+    for bs in states:
+        sim.add(m=bs.m, x=bs.r[0], y=bs.r[1], z=bs.r[2],
+                vx=bs.v[0], vy=bs.v[1], vz=bs.v[2])
+    sim.move_to_com()
+
+    # If oblateness active and available, set parameters on central body
+    rx = sim.contents.get("reboundx")
+    obl = sim.contents.get("obl")
+    if rx is not None and obl is not None:
+        try:
+            j2 = sim.contents.get("j2_value", J2_SUN_DEFAULT)
+            rebx_particle = rx.get_particle(sim.particles[0])
+            rebx_particle.params["J2"] = j2
+            rebx_particle.params["R_eq"] = R_SUN_AU
+            log.info("J2 enabled: J2=%.3e, R_eq=%.6f AU", j2, R_SUN_AU)
+        except Exception as e:
+            log.warning("Failed to set J2 params; continuing without J2. (%s)", e)
+
+    # Optional: add a simple linear stellar intruder
+    intr = cfg.get("intruder", {})
+    if intr.get("enabled", False):
+        from solar_flyby_sim.intruders.quick import add_linear_intruder
+
+        add_linear_intruder(
+            sim,
+            mass_Msun=float(intr.get("mass_Msun", 0.5)),
+            v_inf_kms=float(intr.get("v_inf_kms", 20.0)),
+            impact_param_AU=float(intr.get("impact_param_AU", 1.0e4)),
+            r_init_AU=float(intr.get("r_init_AU", 2.0e4)),
+            direction_spherical_deg=tuple(intr.get("direction_spherical_deg", [60.0, 40.0])),
+        )
+
+    # Outputs
+    outdir = Path(io_cfg.get("outdir", "outputs/run"))
+    outdir.mkdir(parents=True, exist_ok=True)
+    writer = OutputWriter(outdir)
+
+    # Optional REBOUND SimulationArchive for animation/post-processing
+    sa_path = outdir / "states.bin"
+    sa = rebound.Simulationarchive(str(sa_path), create=True)
+
+    # Time stepping (integrate to a regular grid for outputs)
+    duration = float(run["duration_yr"])
+    dt = float(run["dt_yr"])
+    steps = int(np.floor(duration / dt))
+    every = int(run.get("output_every_steps", 100))
+
+    # Diagnostics
+    diag = Diagnostics(sim)
+
+    # (Placeholder) stochastic flybys list if you use that pipeline
+    flyby_list = draw_flybys(fb_cfg, duration, rng)
+    next_flyby_idx = 0  # reserved if you later trigger them during the loop
+
+    log.info("Starting integration: duration=%.3e yr, steps=%d", duration, steps)
+    t0 = sim.t
+
+    for i in range(steps + 1):
+        # If you later want to trigger scheduled flybys, check here using sim.t
+        # while next_flyby_idx < len(flyby_list) and flyby_list[next_flyby_idx].t <= sim.t:
+        #     flyby_list[next_flyby_idx].apply(sim)
+        #     next_flyby_idx += 1
+
+        sim.integrate(t0 + i * dt)
+
+        if i % every == 0:
+            elems = pd.DataFrame(compute_elements(sim))
+            energy = diag.energy()
+            angmom = diag.angular_momentum()
+            writer.write_snapshot(sim.t, elems, energy, angmom)
+            sa.append(sim)
+
+    writer.finalize()
+    log.info("Run complete. Output in %s", outdir)
