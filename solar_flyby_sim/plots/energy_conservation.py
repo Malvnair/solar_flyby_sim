@@ -30,7 +30,7 @@ def main():
     ap.add_argument("--outdir", type=Path, required=True)
     ap.add_argument("--show", action="store_true")
     args = ap.parse_args()
-    outdir: Path = 
+    outdir: Path 
     outdir.mkdir(parents=True, exist_ok=True)
 
     energy_df = _load_table(outdir, "energy")
